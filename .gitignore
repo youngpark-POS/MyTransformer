@@ -5,9 +5,9 @@ __pycache__/
 venv/
 env/
 
-# 학습 산출물 / 캐시 데이터
-checkpoints/
-data/
+# 학습 산출물 / 캐시 데이터 (루트 디렉토리만 — src/transformer/data 소스는 제외하지 않음)
+/checkpoints/
+/data/
 *.pt
 *.ckpt
 .DS_Store
