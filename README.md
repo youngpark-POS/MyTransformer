@@ -1,9 +1,8 @@
 # Transformer (from scratch, PyTorch)
 
-"Attention is All You Need"(Vaswani et al., 2017)의 **인코더-디코더 Transformer**를
+"Attention is All You Need"(Vaswani et al., 2017)의 Encoder-Decoder Transformer를
 PyTorch로 직접 구현한 EN→DE 기계번역 프로젝트입니다. Multi-head attention, positional
-encoding, masking을 `nn.Transformer` 없이 손으로 구현했고, 토크나이저/단어사전도 직접
-만들었습니다(spaCy/torchtext 미사용).
+encoding, masking을 `nn.Transformer` 없이 구현했습니다.
 
 ## 구조
 
@@ -39,14 +38,3 @@ python -m transformer.train --epochs 10
 python -m transformer.translate --text "a man is riding a bike"
 python -m transformer.translate --text "a man is riding a bike" --beam 5
 ```
-
-## 설계 요점
-
-- **From scratch**: scaled dot-product attention, multi-head 분할/병합, sinusoidal PE,
-  pad/causal 마스크를 직접 구현.
-- **Pre-norm** residual(`x + Sublayer(LayerNorm(x))`)로 학습 안정성 확보.
-- **Teacher forcing** 학습 + **자가회귀** 추론(greedy/beam, beam은 길이 정규화 적용).
-- **Noam warmup** LR 스케줄 + label smoothing(0.1).
-- 데이터셋은 `datasets`의 `bentrevett/multi30k`를 사용(torchtext 회피).
-
-자세한 아키텍처/관례는 [CLAUDE.md](CLAUDE.md) 참고.
