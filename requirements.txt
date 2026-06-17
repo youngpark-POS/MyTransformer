@@ -1,0 +1,5 @@
+torch>=2.0
+datasets>=2.14
+sacrebleu>=2.3
+tqdm>=4.65
+pytest>=7.0
