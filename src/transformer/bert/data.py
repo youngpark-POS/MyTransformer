@@ -30,7 +30,8 @@ from ..data.tokenizer import tokenize
 from ..data.vocab import Vocab
 
 # wikitext-2(raw): 약 2M 토큰의 작은 영어 단일언어 코퍼스. 빠른 학습/검증에 적합.
-WIKITEXT = ("wikitext", "wikitext-2-raw-v1")
+# 최신 huggingface_hub는 repo id가 'namespace/name' 형식이어야 하므로 정식 ID(Salesforce/wikitext)를 쓴다.
+WIKITEXT = ("Salesforce/wikitext", "wikitext-2-raw-v1")
 
 
 def build_mlm_vocab(token_sequences: Iterable[List[str]], min_freq: int = 3) -> Vocab:
