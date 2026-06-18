@@ -60,3 +60,53 @@ class Config:
 PAD_TOKEN, BOS_TOKEN, EOS_TOKEN, UNK_TOKEN = "<pad>", "<bos>", "<eos>", "<unk>"
 PAD_IDX, BOS_IDX, EOS_IDX, UNK_IDX = 0, 1, 2, 3
 SPECIAL_TOKENS = [PAD_TOKEN, BOS_TOKEN, EOS_TOKEN, UNK_TOKEN]
+
+# --- BERT(MLM) 특수 토큰 -------------------------------------------------
+# 번역용 4개 토큰을 의미적으로 재사용한다: [CLS]=<bos>, [SEP]=<eos>.
+# 새로 필요한 건 <mask> 하나뿐이라 인덱스 4에 예약한다(0~3은 그대로).
+# SPECIAL_TOKENS와 번역 vocab 캐시는 건드리지 않으므로 기존 번역 경로는 무영향.
+MASK_TOKEN = "<mask>"
+MASK_IDX = 4
+CLS_IDX = BOS_IDX  # 1 — 문장 시작/표현 집약 토큰
+SEP_IDX = EOS_IDX  # 2 — 문장 경계 토큰(풀 BERT의 문장쌍 구분에 재사용)
+
+
+@dataclass
+class BertModelConfig:
+    """BERT(encoder-only) 아키텍처 하이퍼파라미터.
+
+    번역 모델보다 작게 잡아 wikitext-2에서 빠르게 돈다. d_ff는 관행상 4*d_model.
+    """
+    d_model: int = 256
+    n_heads: int = 8
+    n_layers: int = 6
+    d_ff: int = 1024
+    dropout: float = 0.1
+    max_len: int = 128
+    tie_embeddings: bool = True  # MLM 출력 헤드를 토큰 임베딩과 weight tying
+
+    def __post_init__(self) -> None:
+        assert self.d_model % self.n_heads == 0, "d_model은 n_heads로 나누어떨어져야 합니다."
+
+
+@dataclass
+class BertTrainConfig:
+    """MLM 사전학습 루프 하이퍼파라미터."""
+    batch_size: int = 64
+    epochs: int = 10
+    warmup_steps: int = 1000
+    mask_prob: float = 0.15     # 마스킹 대상 토큰 비율(원논문 BERT와 동일)
+    grad_clip: float = 1.0
+    betas: tuple[float, float] = (0.9, 0.98)
+    eps: float = 1e-9
+    seed: int = 42
+    min_freq: int = 3           # wikitext는 어휘가 커서 번역(2)보다 높게
+    device: str = "cuda"
+
+
+@dataclass
+class BertConfig:
+    model: BertModelConfig = field(default_factory=BertModelConfig)
+    train: BertTrainConfig = field(default_factory=BertTrainConfig)
+    data_dir: Path = DATA_DIR
+    checkpoint_dir: Path = CHECKPOINT_DIR
