@@ -77,10 +77,10 @@ class BertModelConfig:
 
     번역 모델보다 작게 잡아 wikitext-2에서 빠르게 돈다. d_ff는 관행상 4*d_model.
     """
-    d_model: int = 256
-    n_heads: int = 8
-    n_layers: int = 6
-    d_ff: int = 1024
+    d_model: int = 512          # BERT-base-lite (wikitext-103 학습용으로 확대)
+    n_heads: int = 8            # 512/8 = head_dim 64
+    n_layers: int = 8
+    d_ff: int = 2048
     dropout: float = 0.1
     max_len: int = 128
     tie_embeddings: bool = True  # MLM 출력 헤드를 토큰 임베딩과 weight tying
@@ -94,13 +94,15 @@ class BertTrainConfig:
     """MLM 사전학습 루프 하이퍼파라미터."""
     batch_size: int = 64
     epochs: int = 10
-    warmup_steps: int = 1000
+    warmup_steps: int = 2000    # 큰 모델 + 긴 학습에 맞춰 확대
     mask_prob: float = 0.15     # 마스킹 대상 토큰 비율(원논문 BERT와 동일)
     grad_clip: float = 1.0
+    weight_decay: float = 0.01  # AdamW 정규화(LayerNorm/bias는 제외)
     betas: tuple[float, float] = (0.9, 0.98)
     eps: float = 1e-9
     seed: int = 42
     min_freq: int = 3           # wikitext는 어휘가 커서 번역(2)보다 높게
+    max_vocab_size: int = 30000  # 빈도 상위 N개로 vocab 상한 — 임베딩/softmax 비대화 방지
     device: str = "cuda"
 
 

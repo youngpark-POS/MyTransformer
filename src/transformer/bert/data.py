@@ -29,21 +29,31 @@ from config import (
 from ..data.tokenizer import tokenize
 from ..data.vocab import Vocab
 
-# wikitext-2(raw): 약 2M 토큰의 작은 영어 단일언어 코퍼스. 빠른 학습/검증에 적합.
+# wikitext-103(raw): 약 100M 토큰의 영어 단일언어 코퍼스(BERT급 학습용).
 # 최신 huggingface_hub는 repo id가 'namespace/name' 형식이어야 하므로 정식 ID(Salesforce/wikitext)를 쓴다.
-WIKITEXT = ("Salesforce/wikitext", "wikitext-2-raw-v1")
+WIKITEXT = ("Salesforce/wikitext", "wikitext-103-raw-v1")
 
 
-def build_mlm_vocab(token_sequences: Iterable[List[str]], min_freq: int = 3) -> Vocab:
+def build_mlm_vocab(
+    token_sequences: Iterable[List[str]],
+    min_freq: int = 3,
+    max_size: int | None = None,
+) -> Vocab:
     """번역용 Vocab.build를 재사용하되 <mask>를 인덱스 4에 끼워 넣는다.
 
-    base.itos = [<pad>,<bos>,<eos>,<unk>, 단어...] 이므로 앞 4개(특수토큰) 뒤,
-    실제 단어들 앞(인덱스 4)에 <mask>를 삽입한다. 그러면 0~3 인덱스 약속이
-    유지되어 Vocab.__init__의 특수토큰 assert를 그대로 통과한다.
+    base.itos = [<pad>,<bos>,<eos>,<unk>, 단어(빈도 내림차순)...] 이므로 앞 4개
+    (특수토큰) 뒤, 실제 단어들 앞(인덱스 4)에 <mask>를 삽입한다. 그러면 0~3
+    인덱스 약속이 유지되어 Vocab.__init__의 특수토큰 assert를 그대로 통과한다.
+
+    max_size를 주면 빈도 상위 단어만 남겨 최종 vocab 크기를 max_size로 제한한다
+    (wikitext-103처럼 어휘가 수십만인 코퍼스에서 임베딩/softmax 비대화를 막는다).
     """
     base = Vocab.build(token_sequences, min_freq=min_freq)
+    itos = base.itos
+    if max_size is not None and len(itos) >= max_size:
+        itos = itos[: max_size - 1]  # <mask> 1칸을 더해 최종이 정확히 max_size가 되도록
     n_special = UNK_IDX + 1  # 4
-    itos = base.itos[:n_special] + [MASK_TOKEN] + base.itos[n_special:]
+    itos = itos[:n_special] + [MASK_TOKEN] + itos[n_special:]
     return Vocab(itos)
 
 
@@ -73,14 +83,17 @@ class MLMDataset(Dataset):
 
     def __init__(self, lines: List[str], vocab: Vocab, max_len: int = 128, min_tokens: int = 4) -> None:
         self.examples: List[torch.Tensor] = []
+        body_len = max_len - 2  # [CLS], [SEP] 자리 확보
         for text in lines:
-            ids = vocab.encode(tokenize(text))  # [CLS] + 토큰들 + [SEP]
-            if len(ids) < min_tokens:
-                continue
-            ids = ids[:max_len]
-            if ids[-1] != SEP_IDX:  # max_len으로 잘렸으면 [SEP]로 끝맺음
-                ids[-1] = SEP_IDX
-            self.examples.append(torch.tensor(ids, dtype=torch.long))
+            # 본문 토큰만(CLS/SEP 없이) 얻은 뒤, max_len을 넘으면 잘라 버리지 않고
+            # body_len 단위로 쪼개 여러 예제로 만든다(truncation 대신 chunking).
+            body = vocab.encode(tokenize(text), add_bos_eos=False)
+            for start in range(0, len(body), body_len):
+                chunk = body[start : start + body_len]
+                ids = [CLS_IDX] + chunk + [SEP_IDX]
+                if len(ids) < min_tokens:  # 자투리 너무 짧은 청크는 버림
+                    continue
+                self.examples.append(torch.tensor(ids, dtype=torch.long))
 
     def __len__(self) -> int:
         return len(self.examples)
@@ -129,11 +142,18 @@ class MLMCollator:
 
 
 def _get_or_build_mlm_vocab(cfg: BertConfig, train_lines: List[str]) -> Vocab:
-    """캐시가 있으면 로드, 없으면 학습셋에서 MLM vocab을 구축해 저장."""
-    path = Path(cfg.data_dir) / "vocab_mlm.json"
+    """캐시가 있으면 로드, 없으면 학습셋에서 MLM vocab을 구축해 저장.
+
+    캐시 파일명에 코퍼스 이름을 넣어 wikitext-2/103 전환 시 옛 캐시를 재사용하지 않는다.
+    """
+    path = Path(cfg.data_dir) / f"vocab_mlm_{WIKITEXT[1]}.json"
     if path.exists():
         return Vocab.load(path)
-    vocab = build_mlm_vocab((tokenize(line) for line in train_lines), min_freq=cfg.train.min_freq)
+    vocab = build_mlm_vocab(
+        (tokenize(line) for line in train_lines),
+        min_freq=cfg.train.min_freq,
+        max_size=cfg.train.max_vocab_size,
+    )
     vocab.save(path)
     return vocab
 

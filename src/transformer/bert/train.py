@@ -114,8 +114,18 @@ def main() -> None:
 
     # 마스킹된 위치만 학습(labels의 나머지는 PAD_IDX = ignore_index)
     criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
-    optimizer = torch.optim.Adam(
-        model.parameters(), lr=0, betas=cfg.train.betas, eps=cfg.train.eps
+    # AdamW: 2D 가중치에만 weight decay 적용, LayerNorm/bias(1D)는 제외(BERT 관행).
+    decay, no_decay = [], []
+    for name, p in model.named_parameters():
+        if not p.requires_grad:
+            continue
+        (no_decay if p.dim() == 1 else decay).append(p)
+    optimizer = torch.optim.AdamW(
+        [
+            {"params": decay, "weight_decay": cfg.train.weight_decay},
+            {"params": no_decay, "weight_decay": 0.0},
+        ],
+        lr=0, betas=cfg.train.betas, eps=cfg.train.eps,
     )
     scheduler = NoamLR(optimizer, cfg.model.d_model, cfg.train.warmup_steps)
 
