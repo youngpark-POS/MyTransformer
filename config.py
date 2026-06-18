@@ -35,7 +35,8 @@ class TrainConfig:
     """학습 루프 하이퍼파라미터."""
     batch_size: int = 128
     epochs: int = 30            # 더 큰 모델은 수렴이 느림 — val_loss 곡선 보며 조정
-    warmup_steps: int = 4000    # Noam LR 스케줄 warmup
+    warmup_steps: int = 1500    # Noam LR warmup. Multi30k(~226 step/epoch)에 맞춰 축소
+                                # (4000=~18epoch 워밍업이라 과대 → 1500=~6.6epoch에 LR 정점)
     label_smoothing: float = 0.1
     grad_clip: float = 1.0
     betas: tuple[float, float] = (0.9, 0.98)
