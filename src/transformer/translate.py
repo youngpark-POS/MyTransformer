@@ -100,6 +100,7 @@ def load_for_inference(ckpt_path: Path, device: torch.device):
         d_ff=cfg.model.d_ff,
         dropout=cfg.model.dropout,
         max_len=cfg.model.max_len,
+        tie_embeddings=getattr(cfg.model, "tie_embeddings", False),
     ).to(device)
     model.load_state_dict(ckpt["model_state"])
     return model, src_vocab, tgt_vocab, cfg

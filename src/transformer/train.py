@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import List
 
@@ -32,6 +33,7 @@ def build_model(cfg: Config, src_vocab: Vocab, tgt_vocab: Vocab) -> Transformer:
         dropout=m.dropout,
         max_len=m.max_len,
         pad_idx=PAD_IDX,
+        tie_embeddings=m.tie_embeddings,
     )
 
 
@@ -44,14 +46,15 @@ def run_epoch(
     scheduler: NoamLR | None = None,
     grad_clip: float = 1.0,
     desc: str = "",
-) -> float:
+) -> tuple[float, float]:
     """한 epoch 수행. optimizer가 주어지면 학습, 아니면 평가 모드.
 
     teacher forcing: 디코더 입력은 tgt[:, :-1], 정답은 tgt[:, 1:].
+    반환: (평균 loss, 토큰 단위 정확도) — 둘 다 PAD 토큰을 제외하고 집계.
     """
     is_train = optimizer is not None
     model.train(is_train)
-    total_loss, total_tokens = 0.0, 0
+    total_loss, total_tokens, total_correct = 0.0, 0, 0
 
     for src, tgt in tqdm(loader, desc=desc, leave=False):
         src, tgt = src.to(device), tgt.to(device)
@@ -71,12 +74,16 @@ def run_epoch(
             if scheduler is not None:
                 scheduler.step()
 
-        # PAD를 제외한 토큰 단위 평균 loss 집계
-        n_tokens = (tgt_out != PAD_IDX).sum().item()
+        # PAD를 제외한 토큰 단위로 loss와 정확도(teacher forcing argmax 일치)를 집계
+        non_pad = tgt_out != PAD_IDX
+        n_tokens = non_pad.sum().item()
+        preds = logits.argmax(dim=-1)  # (B, T)
+        total_correct += ((preds == tgt_out) & non_pad).sum().item()
         total_loss += loss.item() * n_tokens
         total_tokens += n_tokens
 
-    return total_loss / max(total_tokens, 1)
+    denom = max(total_tokens, 1)
+    return total_loss / denom, total_correct / denom
 
 
 @torch.no_grad()
@@ -141,20 +148,40 @@ def main() -> None:
     scheduler = NoamLR(optimizer, cfg.model.d_model, cfg.train.warmup_steps)
 
     ckpt_path = Path(cfg.checkpoint_dir) / "best.pt"
+    history_path = Path(cfg.checkpoint_dir) / "history.json"
     best_val = float("inf")
+    history: List[dict] = []
 
     for epoch in range(1, cfg.train.epochs + 1):
-        train_loss = run_epoch(
+        train_loss, train_acc = run_epoch(
             model, train_loader, criterion, device, optimizer, scheduler,
             cfg.train.grad_clip, desc=f"train {epoch}",
         )
-        val_loss = run_epoch(model, val_loader, criterion, device, desc=f"val {epoch}")
-        msg = f"epoch {epoch}: train_loss={train_loss:.4f} val_loss={val_loss:.4f}"
+        val_loss, val_acc = run_epoch(
+            model, val_loader, criterion, device, desc=f"val {epoch}"
+        )
+        msg = (
+            f"epoch {epoch}: train_loss={train_loss:.4f} train_acc={train_acc:.4f} "
+            f"val_loss={val_loss:.4f} val_acc={val_acc:.4f}"
+        )
 
+        record = {
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "train_acc": train_acc,
+            "val_loss": val_loss,
+            "val_acc": val_acc,
+        }
         if args.eval_bleu:
             bleu = evaluate_bleu(model, val_loader, tgt_vocab, device, cfg.model.max_len)
+            record["val_bleu"] = bleu
             msg += f" val_bleu={bleu:.2f}"
         print(msg)
+
+        # epoch마다 누적 기록을 저장 — 학습이 중간에 끊겨도 곡선을 그릴 수 있다.
+        history.append(record)
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
 
         if val_loss < best_val:
             best_val = val_loss

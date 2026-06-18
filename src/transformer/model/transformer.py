@@ -46,6 +46,7 @@ class Transformer(nn.Module):
         dropout: float = 0.1,
         max_len: int = 128,
         pad_idx: int = PAD_IDX,
+        tie_embeddings: bool = False,
     ) -> None:
         super().__init__()
         self.pad_idx = pad_idx
@@ -53,7 +54,8 @@ class Transformer(nn.Module):
             src_vocab_size, d_model, n_heads, n_layers, d_ff, dropout, max_len
         )
         self.decoder = Decoder(
-            tgt_vocab_size, d_model, n_heads, n_layers, d_ff, dropout, max_len
+            tgt_vocab_size, d_model, n_heads, n_layers, d_ff, dropout, max_len,
+            tie_embeddings=tie_embeddings,
         )
         self._reset_parameters()
 

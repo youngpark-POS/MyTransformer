@@ -2,4 +2,5 @@ torch>=2.0
 datasets>=2.14
 sacrebleu>=2.3
 tqdm>=4.65
+matplotlib>=3.5     # plot_history.py 학습 곡선 시각화용 (학습/추론 경로와는 무관)
 pytest>=7.0

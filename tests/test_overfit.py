@@ -37,9 +37,9 @@ def test_overfit_copy_task():
     optimizer = torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9)
     scheduler = NoamLR(optimizer, d_model=64, warmup_steps=100)
 
-    first_loss = run_epoch(model, loader, criterion, device, optimizer, scheduler)
+    first_loss, _ = run_epoch(model, loader, criterion, device, optimizer, scheduler)
     for _ in range(29):
-        last_loss = run_epoch(model, loader, criterion, device, optimizer, scheduler)
+        last_loss, _ = run_epoch(model, loader, criterion, device, optimizer, scheduler)
 
     # 1) loss가 유의하게 감소했는가
     assert last_loss < first_loss * 0.5, f"loss did not drop: {first_loss}->{last_loss}"

@@ -20,6 +20,7 @@ class Decoder(nn.Module):
         d_ff: int,
         dropout: float,
         max_len: int,
+        tie_embeddings: bool = False,
     ) -> None:
         super().__init__()
         self.d_model = d_model
@@ -30,6 +31,11 @@ class Decoder(nn.Module):
         )
         self.norm = nn.LayerNorm(d_model)
         self.out_proj = nn.Linear(d_model, vocab_size)  # 어휘 logits 생성
+        if tie_embeddings:
+            # 입력 임베딩과 출력 projection 가중치를 공유(weight tying).
+            # 두 행렬 모두 (vocab_size, d_model) 형상이라 그대로 묶을 수 있다.
+            # 파라미터(약 vocab*d_model개)를 줄이고 작은 데이터셋에서 정규화 효과를 준다.
+            self.out_proj.weight = self.embed.weight
 
     def forward(
         self,

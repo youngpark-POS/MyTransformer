@@ -18,12 +18,13 @@ CHECKPOINT_DIR = ROOT / "checkpoints"
 @dataclass
 class ModelConfig:
     """Transformer 아키텍처 하이퍼파라미터."""
-    d_model: int = 256          # 임베딩/모델 차원
+    d_model: int = 512          # 임베딩/모델 차원
     n_heads: int = 8            # multi-head attention head 개수 (d_model % n_heads == 0)
-    n_layers: int = 3           # 인코더/디코더 스택 깊이
-    d_ff: int = 512             # position-wise FFN 내부 차원
-    dropout: float = 0.1
+    n_layers: int = 6           # 인코더/디코더 스택 깊이
+    d_ff: int = 2048            # position-wise FFN 내부 차원 (관행상 4*d_model)
+    dropout: float = 0.3        # Multi30k(~29k쌍) 과적합 방지를 위해 base보다 높게
     max_len: int = 128          # positional encoding 최대 길이
+    tie_embeddings: bool = True # 디코더 입력 임베딩과 출력 projection 가중치 공유(정규화+파라미터 절감)
 
     def __post_init__(self) -> None:
         assert self.d_model % self.n_heads == 0, "d_model은 n_heads로 나누어떨어져야 합니다."
@@ -33,7 +34,7 @@ class ModelConfig:
 class TrainConfig:
     """학습 루프 하이퍼파라미터."""
     batch_size: int = 128
-    epochs: int = 10
+    epochs: int = 30            # 더 큰 모델은 수렴이 느림 — val_loss 곡선 보며 조정
     warmup_steps: int = 4000    # Noam LR 스케줄 warmup
     label_smoothing: float = 0.1
     grad_clip: float = 1.0
