@@ -18,7 +18,15 @@ from config import BOS_IDX, EOS_IDX, PAD_IDX, Config
 from .data.dataset import build_dataloaders
 from .data.vocab import Vocab
 from .model.transformer import Transformer
-from .utils import NoamLR, load_checkpoint, resolve_device, save_checkpoint, set_seed
+from .utils import (
+    NoamLR,
+    load_checkpoint,
+    maybe_resume,
+    resolve_device,
+    save_checkpoint,
+    save_training_state,
+    set_seed,
+)
 
 
 def build_model(cfg: Config, src_vocab: Vocab, tgt_vocab: Vocab) -> Transformer:
@@ -118,6 +126,8 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--eval-bleu", action="store_true", help="epoch마다 BLEU 측정(느림)")
+    parser.add_argument("--fresh", action="store_true",
+                        help="last.pt 체크포인트를 무시하고 처음(epoch 1)부터 학습")
     args = parser.parse_args()
 
     cfg = Config()
@@ -148,11 +158,21 @@ def main() -> None:
     scheduler = NoamLR(optimizer, cfg.model.d_model, cfg.train.warmup_steps)
 
     ckpt_path = Path(cfg.checkpoint_dir) / "best.pt"
+    last_path = Path(cfg.checkpoint_dir) / "last.pt"
     history_path = Path(cfg.checkpoint_dir) / "history.json"
-    best_val = float("inf")
-    history: List[dict] = []
 
-    for epoch in range(1, cfg.train.epochs + 1):
+    # 자동 재개: last.pt가 있으면 model/optimizer/scheduler 상태를 복원하고 다음 epoch부터 이어간다.
+    if args.fresh:
+        start_epoch, best_val, history = 1, float("inf"), []
+    else:
+        start_epoch, best_val, history = maybe_resume(
+            last_path, model=model, optimizer=optimizer,
+            scheduler=scheduler, device=device,
+        )
+    if start_epoch > 1:
+        print(f"resuming from epoch {start_epoch} (best_val={best_val:.4f})")
+
+    for epoch in range(start_epoch, cfg.train.epochs + 1):
         train_loss, train_acc = run_epoch(
             model, train_loader, criterion, device, optimizer, scheduler,
             cfg.train.grad_clip, desc=f"train {epoch}",
@@ -195,6 +215,14 @@ def main() -> None:
                 },
             )
             print(f"  saved best -> {ckpt_path}")
+
+        # best 갱신까지 끝난 뒤 매 epoch 전체 학습 상태를 last.pt에 저장 — 자동 재개의 근거.
+        save_training_state(
+            last_path,
+            model=model, optimizer=optimizer, scheduler=scheduler,
+            epoch=epoch, best_val=best_val, history=history,
+            extra={"cfg": cfg, "src_itos": src_vocab.itos, "tgt_itos": tgt_vocab.itos},
+        )
 
 
 if __name__ == "__main__":

@@ -29,6 +29,8 @@ pytest tests/test_overfit.py::test_overfit_copy_task   # 단일 테스트
 python -m transformer.train --epochs 10
 python -m transformer.train --epochs 1 --device cpu     # 빠른 점검
 python -m transformer.train --epochs 10 --eval-bleu     # epoch마다 BLEU(느림)
+# 매 epoch 전체 상태를 checkpoints/last.pt에 저장. 재실행 시 자동으로 이어서 학습한다.
+python -m transformer.train --epochs 10 --fresh         # last.pt 무시하고 처음부터
 
 # 추론 (checkpoints/best.pt 필요)
 python -m transformer.translate --text "a man is riding a bike"
@@ -37,6 +39,7 @@ python -m transformer.translate --text "..." --beam 5   # beam search
 # BERT MLM 사전학습 (첫 실행 시 wikitext-2 다운로드 + data/vocab_mlm.json 캐시)
 python -m transformer.bert.train --epochs 10
 python -m transformer.bert.train --epochs 1 --device cpu   # 빠른 점검
+python -m transformer.bert.train --epochs 10 --fresh       # bert_last.pt 무시하고 처음부터
 pytest tests/test_bert_overfit.py                          # 다운로드 없는 MLM 회귀 검증
 ```
 
@@ -67,7 +70,10 @@ pytest tests/test_bert_overfit.py                          # 다운로드 없는
 - **학습 (`train.py`)**: `run_epoch`가 학습/평가 겸용(`optimizer` 유무로 분기). Teacher forcing은
   디코더 입력 `tgt[:, :-1]`, 정답 `tgt[:, 1:]`. Loss는 `CrossEntropyLoss(ignore_index=PAD_IDX,
   label_smoothing=0.1)`. LR은 `utils.NoamLR`(warmup 스케줄)이 매 step Adam의 lr을 덮어쓰므로
-  **Adam은 반드시 `lr=0`으로 생성**한다. best 체크포인트에 모델+vocab(`itos`)+cfg를 함께 저장.
+  **Adam은 반드시 `lr=0`으로 생성**한다. best 체크포인트(`best.pt`)에 모델+vocab(`itos`)+cfg를
+  함께 저장. 또한 **매 epoch `last.pt`에 전체 학습 상태**(model/optimizer/scheduler `_step`/epoch/
+  best_val/history)를 덮어써 저장하고, 재실행 시 `utils.maybe_resume`가 이를 불러와 자동으로 이어 학습한다
+  (`--fresh`로 무시). BERT도 `bert_last.pt`로 동일.
 
 - **추론 (`translate.py`)**: 인코더를 한 번만 돌려 `memory`를 캐싱하고 `<bos>`부터 자가회귀 디코딩.
   `greedy_decode`(argmax)와 `beam_search_decode`(길이 정규화 `score/len^0.7`). 체크포인트에

@@ -45,6 +45,13 @@ class NoamLR:
             group["lr"] = lr
         return lr
 
+    def state_dict(self) -> Dict[str, Any]:
+        """재개를 위해 step 카운터만 저장(d_model/warmup은 cfg에서 재구성)."""
+        return {"_step": self._step}
+
+    def load_state_dict(self, state: Dict[str, Any]) -> None:
+        self._step = state["_step"]
+
 
 def save_checkpoint(path: Path, payload: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,3 +60,54 @@ def save_checkpoint(path: Path, payload: Dict[str, Any]) -> None:
 
 def load_checkpoint(path: Path, map_location: str | torch.device = "cpu") -> Dict[str, Any]:
     return torch.load(path, map_location=map_location, weights_only=False)
+
+
+def save_training_state(
+    path: Path,
+    *,
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler: NoamLR,
+    epoch: int,
+    best_val: float,
+    history: list,
+    extra: Dict[str, Any],
+) -> None:
+    """매 epoch 호출되는 전체 학습 상태 저장(last.pt 덮어쓰기).
+
+    재개에 필요한 model/optimizer/scheduler 상태와 진행 정보(epoch/best_val/history)를
+    모두 담는다. `extra`에는 경로별 메타(cfg, vocab itos 등)를 넣어 추론 복원에도 쓸 수 있다.
+    """
+    payload = {
+        "model_state": model.state_dict(),
+        "optimizer_state": optimizer.state_dict(),
+        "scheduler_state": scheduler.state_dict(),
+        "epoch": epoch,
+        "best_val": best_val,
+        "history": history,
+        **extra,
+    }
+    save_checkpoint(path, payload)
+
+
+def maybe_resume(
+    path: Path,
+    *,
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler: NoamLR,
+    device: str | torch.device,
+) -> tuple[int, float, list]:
+    """`path`에 저장된 학습 상태가 있으면 복원하고 (start_epoch, best_val, history) 반환.
+
+    없으면 (1, inf, [])을 돌려 처음부터 시작한다. model/optimizer는 반드시 `.to(device)`와
+    `lr=0`으로 생성된 뒤에 호출해야 state_dict 모양이 맞는다.
+    """
+    if not path.exists():
+        return 1, float("inf"), []
+    ckpt = load_checkpoint(path, map_location=device)
+    model.load_state_dict(ckpt["model_state"])
+    optimizer.load_state_dict(ckpt["optimizer_state"])
+    scheduler.load_state_dict(ckpt["scheduler_state"])
+    start_epoch = ckpt["epoch"] + 1
+    return start_epoch, ckpt["best_val"], ckpt["history"]
