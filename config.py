@@ -103,6 +103,9 @@ class BertTrainConfig:
     seed: int = 42
     min_freq: int = 3           # wikitext는 어휘가 커서 번역(2)보다 높게
     max_vocab_size: int = 30000  # 빈도 상위 N개로 vocab 상한 — 임베딩/softmax 비대화 방지
+    max_train_examples: int | None = None  # 에폭당 학습 예제 수 상한(None=전체).
+                                # 설정 시 매 에폭 학습셋에서 이 개수만큼 무작위 추출 →
+                                # 에폭당 시간 단축. 에폭마다 다른 부분집합이라 누적 커버리지는 유지.
     device: str = "cuda"
 
 

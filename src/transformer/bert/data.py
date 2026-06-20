@@ -15,7 +15,7 @@ from typing import Iterable, List, Tuple
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, RandomSampler
 
 from config import (
     BertConfig,
@@ -165,12 +165,23 @@ def build_mlm_dataloaders(cfg: BertConfig) -> Tuple[DataLoader, DataLoader, Voca
     vocab = _get_or_build_mlm_vocab(cfg, train_lines)
     collator = MLMCollator(len(vocab), cfg.train.mask_prob)
 
-    def make_loader(lines: List[str], shuffle: bool) -> DataLoader:
+    def make_loader(lines: List[str], train: bool) -> DataLoader:
         dataset = MLMDataset(lines, vocab, cfg.model.max_len)
+        cap = cfg.train.max_train_examples
+        if train and cap is not None and cap < len(dataset):
+            # 매 에폭 dataset에서 cap개를 비복원 무작위 추출. DataLoader가 에폭마다
+            # sampler.__iter__를 다시 호출하므로 부분집합이 에폭마다 새로 뽑힌다.
+            sampler = RandomSampler(dataset, replacement=False, num_samples=cap)
+            return DataLoader(
+                dataset,
+                batch_size=cfg.train.batch_size,
+                sampler=sampler,
+                collate_fn=collator,
+            )
         return DataLoader(
             dataset,
             batch_size=cfg.train.batch_size,
-            shuffle=shuffle,
+            shuffle=train,
             collate_fn=collator,
         )
 

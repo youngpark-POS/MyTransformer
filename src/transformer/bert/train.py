@@ -90,6 +90,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument("--max-train-examples", type=int, default=None,
+                        help="에폭당 학습 예제 수 상한(매 에폭 무작위 추출). 미지정 시 전체 사용")
     parser.add_argument("--device", type=str, default=None)
     args = parser.parse_args()
 
@@ -98,6 +100,8 @@ def main() -> None:
         cfg.train.epochs = args.epochs
     if args.batch_size is not None:
         cfg.train.batch_size = args.batch_size
+    if args.max_train_examples is not None:
+        cfg.train.max_train_examples = args.max_train_examples
     if args.device is not None:
         cfg.train.device = args.device
 
@@ -106,7 +110,9 @@ def main() -> None:
     print(f"device: {device}")
 
     train_loader, val_loader, vocab = build_mlm_dataloaders(cfg)
-    print(f"vocab: {len(vocab)}  train_batches: {len(train_loader)}")
+    cap = cfg.train.max_train_examples
+    subset_note = f"  (subset cap: {cap:,}/epoch)" if cap is not None else ""
+    print(f"vocab: {len(vocab)}  train_batches: {len(train_loader)}{subset_note}")
 
     model = build_model(cfg, vocab).to(device)
     n_params = sum(p.numel() for p in model.parameters())
